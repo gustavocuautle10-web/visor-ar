@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Motor Sísmico — Visor AR</title>
+<meta name="description" content="Visor de Realidad Aumentada del modelo 3D del sitio.">
+
+<!-- model-viewer oficial de Google (Apache-2.0, sin costo, sin cuenta) -->
+<script type="module"
+        src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js">
+</script>
+
+<style>
+  :root {
+    --bg:        #0D1B2A;
+    --panel:     #132338;
+    --acento:    #1E90D4;
+    --acento-h:  #157AB8;
+    --texto:     #F0F4F8;
+    --gris:      #8FA3B8;
+    --borde:     #2A4A6B;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--texto);
+    overflow: hidden;
+  }
+
+  /* ── Barra superior ─────────────────────────────────────────────── */
+  .barra {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 18px 12px;
+    background: linear-gradient(to bottom,
+                rgba(13,27,42,0.85) 0%, rgba(13,27,42,0) 100%);
+    pointer-events: none;
+  }
+  .barra .punto {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--acento);
+    box-shadow: 0 0 8px var(--acento);
+  }
+  .barra span {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: var(--texto);
+  }
+  .barra small {
+    color: var(--gris);
+    font-size: 11px;
+    margin-left: auto;
+  }
+
+  /* ── Visor 3D a pantalla completa ───────────────────────────────── */
+  model-viewer {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    --poster-color: transparent;
+    --progress-bar-color: var(--acento);
+    --progress-mask: var(--panel);
+  }
+
+  /* ── Botón flotante "Ver en Realidad Aumentada" ─────────────────── */
+  #btn-ar {
+    position: absolute;
+    left: 50%;
+    bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 22px;
+    border: none;
+    border-radius: 999px;
+    background: var(--acento);
+    color: #FFFFFF;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(30, 144, 212, 0.45);
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  #btn-ar:hover  { background: var(--acento-h); }
+  #btn-ar:active { transform: translateX(-50%) scale(0.97); }
+  #btn-ar svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  #leyenda {
+    position: absolute;
+    left: 50%;
+    bottom: calc(6px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: var(--gris);
+    white-space: nowrap;
+  }
+
+  /* Oculta el botón nativo de AR de model-viewer: usamos el nuestro,
+     estilizado y con el mismo texto en toda la app. */
+  model-viewer::part(default-ar-button) { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    model-viewer { --auto-rotate-delay: 999999; }
+  }
+
+  @media (max-width: 400px) {
+    #btn-ar { font-size: 13px; padding: 11px 18px; }
+    .barra span { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="barra">
+  <div class="punto"></div>
+  <span>Motor Sísmico · Visor AR</span>
+  <small id="estado-carga">Cargando <span id="nombre-modelo"></span>…</small>
+</div>
+
+<model-viewer
+    id="visor"
+    alt="Modelo 3D del sitio"
+    ar
+    ar-modes="scene-viewer webxr"
+    ar-scale="auto"
+    camera-controls
+    touch-action="pan-y"
+    auto-rotate
+    auto-rotate-delay="1500"
+    rotation-per-second="18deg"
+    shadow-intensity="1"
+    exposure="1"
+    interaction-prompt="none">
+
+  <button id="btn-ar" slot="ar-button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2 3 7l9 5 9-5-9-5Z"/>
+      <path d="M3 7v10l9 5 9-5V7"/>
+      <path d="M12 12v10"/>
+    </svg>
+    Ver en Realidad Aumentada
+  </button>
+
+  <div slot="progress-bar" class="barra-progreso">
+    <div class="update-bar"></div>
+  </div>
+</model-viewer>
+
+<div id="leyenda">Compatible con Android (Google Scene Viewer, requiere ARCore)</div>
+
+<script>
+  const visor  = document.getElementById("visor");
+  const estado = document.getElementById("estado-carga");
+
+  // ── Selección de modelo vía ?modelo=... ────────────────────────────
+  // Generado por app_ar.py con --modelo <nombre>. Si no viene el
+  // parámetro, se usa "sitio_001" como valor por defecto.
+  const params      = new URLSearchParams(window.location.search);
+  const nombreModelo = params.get("modelo") || "sitio_001";
+  visor.src = `models/${nombreModelo}.glb`;
+
+  document.getElementById("nombre-modelo").textContent = nombreModelo;
+
+  visor.addEventListener("load", () => { estado.textContent = ""; });
+  visor.addEventListener("error", () => {
+    estado.textContent = `No se pudo cargar "${nombreModelo}.glb".`;
+  });
+
+  // Si el dispositivo no soporta AR en absoluto, lo indicamos en vez de
+  // mostrar un botón que no haría nada.
+  visor.addEventListener("ar-status", (e) => {
+    if (e.detail.status === "not-presenting" && !visor.canActivateAR) {
+      document.getElementById("leyenda").textContent =
+        "Este dispositivo no soporta AR — puedes rotar el modelo con el dedo.";
+    }
+  });
+</script>
+
+</body>
+</html>
